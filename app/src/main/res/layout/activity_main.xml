@@ -17,12 +17,27 @@
         android:id="@+id/btn_search"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Locate" />
+        android:text="Search" />
 
     <Button
-        android:id="@+id/btn_switch"
+    android:id="@+id/btn_switch"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:text="Change View" />
+
+    <Button
+        android:id="@+id/btn_locate"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:text="Change View" />
+        android:layout_gravity="right"
+        android:text="Locate" />
+
+    <ToggleButton
+        android:id="@+id/toggleButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ToggleButton"
+        android:layout_gravity="right|bottom"
+        />
 </FrameLayout>

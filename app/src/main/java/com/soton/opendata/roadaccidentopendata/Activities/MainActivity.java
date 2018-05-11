@@ -1,21 +1,19 @@
 package com.soton.opendata.roadaccidentopendata.Activities;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.location.LocationProvider;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
-import android.widget.TimePicker;
 import android.widget.Toast;
 
 import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
@@ -23,7 +21,6 @@ import com.google.android.gms.common.GooglePlayServicesRepairableException;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.places.Place;
-import com.google.android.gms.location.places.ui.PlaceAutocomplete;
 import com.google.android.gms.location.places.ui.PlacePicker;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -34,7 +31,6 @@ import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.TileOverlay;
 import com.google.android.gms.maps.model.TileOverlayOptions;
 import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.android.gms.tasks.Task;
 import com.google.maps.android.heatmaps.HeatmapTileProvider;
 import com.soton.opendata.roadaccidentopendata.R;
 
@@ -54,16 +50,49 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     private TileOverlay mOverlay;
     private LocationManager locationManager;
     private int PLACE_PICKER_REQUEST = 1;
-    private int MODE=1; //0为实时地图，1为热力图
+    private int MODE = 1; //0为实时地图，1为热力图
+    private String provider;
+    private FusedLocationProviderClient mFusedLocationClient;
+    private Location clocation;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_heat_map);
+        setContentView(R.layout.activity_main);
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
+
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        //获取位置权限
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+            return;
+        }
+        mFusedLocationClient.getLastLocation().addOnSuccessListener(new OnSuccessListener<Location>() {
+            @Override
+            public void onSuccess(Location location) {
+                clocation=location;
+            }
+        });
+
+
+        //定位按钮
+        Button btnLocate = findViewById(R.id.btn_locate);
+        btnLocate.setOnClickListener(new View.OnClickListener() {
+            @SuppressLint("MissingPermission")
+            @Override
+            public void onClick(View view) {
+                mFusedLocationClient.getLastLocation().addOnSuccessListener(new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(Location location) {
+                        clocation=location;
+                        //mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(clocation.getLatitude(),clocation.getLongitude())));
+                        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(clocation.getLatitude(),clocation.getLongitude()),18));
+                        mMap.addMarker(new MarkerOptions().position(new LatLng(clocation.getLatitude(),clocation.getLongitude())).title("My Location"));
+                    }
+                });
+            }
+        });
+
 
         //切换模式按钮
         Button btnSwitch = findViewById(R.id.btn_switch);
@@ -101,40 +130,14 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             }
         });
 
-        //获取当前位置
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        //获取位置权限
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-            return;
-        }
-
-
-        //位置变化更新
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 8, new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
-                ;
-            }
-
-            @Override
-            public void onStatusChanged(String s, int i, Bundle bundle) {
-
-            }
-
-            @Override
-            public void onProviderEnabled(String s) {
-            }
-
-            @Override
-            public void onProviderDisabled(String s) {
-
-            }
-        });
+        //加载Map视图
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
     }
 
 
+    //获取用户搜索位置结果
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -175,14 +178,15 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             return;
         }
 
-        Location inital = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-        if(inital!=null){
-            mMap.addMarker(new MarkerOptions().position(new LatLng(inital.getLatitude(),inital.getLongitude())).title("My Location"));
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(inital.getLatitude(),inital.getLongitude())));
-            mMap.moveCamera(CameraUpdateFactory.zoomBy(20));
-        }
+//        Location inital = locationManager.getLastKnownLocation(provider);
+//        if(inital!=null){
+//            mMap.addMarker(new MarkerOptions().position(new LatLng(inital.getLatitude(),inital.getLongitude())).title("My Location"));
+//            mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(inital.getLatitude(),inital.getLongitude())));
+//        }
     }
 
+
+    //添加热力图
     private void addHeatMap() {
         List<LatLng> list = null;
 
