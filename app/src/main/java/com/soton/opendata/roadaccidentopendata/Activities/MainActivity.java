@@ -75,23 +75,25 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         });
 
 
+
+
+
         //定位按钮
-        Button btnLocate = findViewById(R.id.btn_locate);
-        btnLocate.setOnClickListener(new View.OnClickListener() {
-            @SuppressLint("MissingPermission")
-            @Override
-            public void onClick(View view) {
-                mFusedLocationClient.getLastLocation().addOnSuccessListener(new OnSuccessListener<Location>() {
-                    @Override
-                    public void onSuccess(Location location) {
-                        clocation=location;
-                        //mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(clocation.getLatitude(),clocation.getLongitude())));
-                        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(clocation.getLatitude(),clocation.getLongitude()),18));
-                        mMap.addMarker(new MarkerOptions().position(new LatLng(clocation.getLatitude(),clocation.getLongitude())).title("My Location"));
-                    }
-                });
-            }
-        });
+//        Button btnLocate = findViewById(R.id.btn_locate);
+//        btnLocate.setOnClickListener(new View.OnClickListener() {
+//            @SuppressLint("MissingPermission")
+//            @Override
+//            public void onClick(View view) {
+//                mFusedLocationClient.getLastLocation().addOnSuccessListener(new OnSuccessListener<Location>() {
+//                    @Override
+//                    public void onSuccess(Location location) {
+//                        clocation=location;
+//                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(clocation.getLatitude(),clocation.getLongitude()),18));
+//                        mMap.addMarker(new MarkerOptions().position(new LatLng(clocation.getLatitude(),clocation.getLongitude())).title("My Location"));
+//                    }
+//                });
+//            }
+//        });
 
 
         //切换模式按钮
@@ -137,6 +139,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
 
+
     //获取用户搜索位置结果
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -161,6 +164,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
      * it inside the SupportMapFragment. This method will only be triggered once the user has
      * installed Google Play services and returned to the app.
      */
+    @SuppressLint("MissingPermission")
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
@@ -168,7 +172,25 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         // Add a marker in Sydney and move the camera
         LatLng sydney = new LatLng(51.5, 0.12);
         mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
+        mMap.animateCamera(CameraUpdateFactory.newLatLng(sydney));
+        mMap.setMyLocationEnabled(true);
+
+        mMap.setOnMyLocationButtonClickListener(new GoogleMap.OnMyLocationButtonClickListener() {
+            @SuppressLint("MissingPermission")
+            @Override
+            public boolean onMyLocationButtonClick() {
+                mFusedLocationClient.getLastLocation().addOnSuccessListener(new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(Location location) {
+                        clocation=location;
+                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(clocation.getLatitude(),clocation.getLongitude()),18));
+                        Toast.makeText(getApplicationContext(),location.toString(),Toast.LENGTH_LONG).show();
+                    }
+                });
+
+                return true;
+            }
+        });
 
         addHeatMap();
 
