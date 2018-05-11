@@ -2,6 +2,7 @@ package com.soton.opendata.roadaccidentopendata.Activities;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
@@ -12,10 +13,18 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TimePicker;
 import android.widget.Toast;
 
+import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
+import com.google.android.gms.common.GooglePlayServicesRepairableException;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.places.Place;
+import com.google.android.gms.location.places.ui.PlaceAutocomplete;
+import com.google.android.gms.location.places.ui.PlacePicker;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -38,12 +47,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
-public class HeatMapActivity extends FragmentActivity implements OnMapReadyCallback {
+public class MainActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
     private HeatmapTileProvider mProvider;
     private TileOverlay mOverlay;
     private LocationManager locationManager;
+    private int PLACE_PICKER_REQUEST = 1;
+    private int MODE=1; //0为实时地图，1为热力图
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,21 +65,57 @@ public class HeatMapActivity extends FragmentActivity implements OnMapReadyCallb
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
+        //切换模式按钮
+        Button btnSwitch = findViewById(R.id.btn_switch);
+        btnSwitch.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if(MODE==1){
+                    mOverlay.remove();
+                    mOverlay.clearTileCache();
+                    MODE=0;
+                    Toast.makeText(getApplicationContext(),"删除",Toast.LENGTH_LONG).show();
+                }else if(MODE==0){
+                    addHeatMap();
+                    MODE=1;
+                }
+            }
+        });
+
+        //搜索按钮
+        Button btnSearch = findViewById(R.id.btn_search);
+        btnSearch.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                //地点选择器
+                PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
+
+                try {
+                    startActivityForResult(builder.build(MainActivity.this), PLACE_PICKER_REQUEST);
+                } catch (GooglePlayServicesRepairableException e) {
+                    e.printStackTrace();
+                } catch (GooglePlayServicesNotAvailableException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        });
+
         //获取当前位置
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         //获取位置权限
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.ACCESS_FINE_LOCATION},1);
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
             return;
         }
 
 
-
         //位置变化更新
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000,8,new LocationListener(){
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 8, new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
-                mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(),location.getLongitude())));;
+                mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
+                ;
             }
 
             @Override
@@ -85,6 +132,15 @@ public class HeatMapActivity extends FragmentActivity implements OnMapReadyCallb
 
             }
         });
+    }
+
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        Place place = PlacePicker.getPlace(getApplicationContext(), data);
+        String toastMsg = String.format("Place: %s", place.getName());
+        Toast.makeText(getApplicationContext(), toastMsg, Toast.LENGTH_LONG).show();
     }
 
     //权限处理回调
@@ -113,7 +169,13 @@ public class HeatMapActivity extends FragmentActivity implements OnMapReadyCallb
 
         addHeatMap();
 
-        Location inital=locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        //权限处理
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+            return;
+        }
+
+        Location inital = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
         if(inital!=null){
             mMap.addMarker(new MarkerOptions().position(new LatLng(inital.getLatitude(),inital.getLongitude())).title("My Location"));
             mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(inital.getLatitude(),inital.getLongitude())));
@@ -140,7 +202,7 @@ public class HeatMapActivity extends FragmentActivity implements OnMapReadyCallb
         list.clear();
         // Add a tile overlay to the map, using the heat map tile provider.
         mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
-
+        Toast.makeText(getApplicationContext(),"添加叠层",Toast.LENGTH_LONG).show();
 
     }
 
