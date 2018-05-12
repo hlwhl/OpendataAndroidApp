@@ -2,26 +2,46 @@ package com.soton.opendata.roadaccidentopendata.Activities;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.Build;
 import android.support.annotation.NonNull;
+import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.NotificationManagerCompat;
+import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 
+import com.arlib.floatingsearchview.FloatingSearchView;
 import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
 import com.google.android.gms.common.GooglePlayServicesRepairableException;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.places.Place;
+import com.google.android.gms.location.places.ui.PlaceAutocomplete;
+import com.google.android.gms.location.places.ui.PlaceAutocompleteFragment;
 import com.google.android.gms.location.places.ui.PlacePicker;
+import com.google.android.gms.location.places.ui.PlaceSelectionListener;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -43,23 +63,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
+import static android.support.v4.app.NotificationCompat.PRIORITY_DEFAULT;
+
 public class MainActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
     private HeatmapTileProvider mProvider;
     private TileOverlay mOverlay;
-    private LocationManager locationManager;
-    private int PLACE_PICKER_REQUEST = 1;
     private int MODE = 1; //0为实时地图，1为热力图
-    private String provider;
     private FusedLocationProviderClient mFusedLocationClient;
     private Location clocation;
+    private LocationCallback locationCallback;
+    private LocationRequest locationRequest=new LocationRequest().setInterval(2000);
+    private NotificationManagerCompat notificationManager;
+    private String CHANNEL_ID="noti";
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        createNotificationChannel();
+        notificationManager = NotificationManagerCompat.from(getApplicationContext());
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         //获取位置权限
@@ -74,26 +99,19 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             }
         });
 
-
-
-
-
-        //定位按钮
-//        Button btnLocate = findViewById(R.id.btn_locate);
-//        btnLocate.setOnClickListener(new View.OnClickListener() {
-//            @SuppressLint("MissingPermission")
-//            @Override
-//            public void onClick(View view) {
-//                mFusedLocationClient.getLastLocation().addOnSuccessListener(new OnSuccessListener<Location>() {
-//                    @Override
-//                    public void onSuccess(Location location) {
-//                        clocation=location;
-//                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(clocation.getLatitude(),clocation.getLongitude()),18));
-//                        mMap.addMarker(new MarkerOptions().position(new LatLng(clocation.getLatitude(),clocation.getLongitude())).title("My Location"));
-//                    }
-//                });
-//            }
-//        });
+        locationCallback=new LocationCallback(){
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult == null) {
+                    return;
+                }
+                for (Location location : locationResult.getLocations()) {
+                    // Update UI with location data
+                    // ...
+                    toast(location.toString());
+                }
+            }
+        };
 
 
         //切换模式按钮
@@ -113,41 +131,74 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             }
         });
 
-        //搜索按钮
-        Button btnSearch = findViewById(R.id.btn_search);
-        btnSearch.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                //地点选择器
-                PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
 
-                try {
-                    startActivityForResult(builder.build(MainActivity.this), PLACE_PICKER_REQUEST);
-                } catch (GooglePlayServicesRepairableException e) {
-                    e.printStackTrace();
-                } catch (GooglePlayServicesNotAvailableException e) {
-                    e.printStackTrace();
+
+        //实时提醒开关
+        ToggleButton tg=findViewById(R.id.toggleButton);
+        tg.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @RequiresApi(api = Build.VERSION_CODES.O)
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                if(b){
+                    startLocationUpdates();
+
+                    Intent intent=new Intent();
+                    PendingIntent pendingIntent=PendingIntent.getActivity(getApplicationContext(),1,intent,0);
+
+                    NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
+                            .setSmallIcon(R.drawable.notification_icon)
+                            .setContentTitle("The Status of Real-Time Warning")
+                            .setContentText("Real-Time Warning Turned On")
+                            .setStyle(new NotificationCompat.BigTextStyle()
+                                    .bigText("Real-Time Warning Turned On."))
+                            .setPriority(NotificationCompat.PRIORITY_MAX)
+                            .setTicker("float")
+                            .setDefaults(~0)
+                            .setFullScreenIntent(pendingIntent,true);
+                    notificationManager.notify(1, mBuilder.build());
+                }else {
+                    stopLocationUpdates();
+
+                    NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
+                            .setSmallIcon(R.drawable.notification_icon)
+                            .setContentTitle("The Status of Real-Time Warning")
+                            .setContentText("Real-Time Warning Turned Off")
+                            .setStyle(new NotificationCompat.BigTextStyle()
+                                    .bigText("Real-Time Warning Turned On."))
+                            .setPriority(NotificationCompat.PRIORITY_MAX)
+                            .setAutoCancel(false);
+                    notificationManager.notify(1, mBuilder.build());
                 }
 
             }
         });
 
-        //加载Map视图
+        //使用自动完成插件位置搜索
+        PlaceAutocompleteFragment autocompleteFragment = (PlaceAutocompleteFragment)
+                getFragmentManager().findFragmentById(R.id.place_autocomplete_fragment);
+
+        autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
+            @Override
+            public void onPlaceSelected(Place place) {
+                // TODO:Get info about the selected place.
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(place.getLatLng(),15));
+                toast("搜索的地点经纬度"+place.getLatLng().toString());
+            }
+
+            @Override
+            public void onError(Status status) {
+                // TODO:Handle the error.
+                Log.i("placeapi", "An error occurred: " + status);
+            }
+        });
+
+
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
     }
-
-
-
-    //获取用户搜索位置结果
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        Place place = PlacePicker.getPlace(getApplicationContext(), data);
-        String toastMsg = String.format("Place: %s", place.getName());
-        Toast.makeText(getApplicationContext(), toastMsg, Toast.LENGTH_LONG).show();
-    }
+    
 
     //权限处理回调
     @Override
@@ -229,7 +280,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         // Add a tile overlay to the map, using the heat map tile provider.
         mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
         Toast.makeText(getApplicationContext(),"添加叠层",Toast.LENGTH_LONG).show();
-
     }
 
     private ArrayList<LatLng> readItems(int resource) throws JSONException {
@@ -247,5 +297,35 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         return list;
     }
 
+    private void toast(String content){
+        Toast.makeText(getApplicationContext(),content,Toast.LENGTH_LONG).show();
+    }
+
+
+    @SuppressLint("MissingPermission")
+    private void startLocationUpdates() {
+        mFusedLocationClient.requestLocationUpdates(locationRequest,
+                locationCallback, null);
+    }
+
+    private void stopLocationUpdates() {
+        mFusedLocationClient.removeLocationUpdates(locationCallback);
+    }
+
+    private void createNotificationChannel() {
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CharSequence name = "mychannel";
+            String description = "this is my channel";
+            int importance = NotificationManager.IMPORTANCE_DEFAULT;
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
+            channel.setDescription(description);
+            // Register the channel with the system; you can't change the importance
+            // or other notification behaviors after this
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            notificationManager.createNotificationChannel(channel);
+        }
+    }
 
 }
