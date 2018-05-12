@@ -47,12 +47,16 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.TileOverlay;
 import com.google.android.gms.maps.model.TileOverlayOptions;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.maps.android.heatmaps.HeatmapTileProvider;
 import com.soton.opendata.roadaccidentopendata.R;
+import com.soton.opendata.roadaccidentopendata.utils.HttpURLConnectionNetworkTask;
+import com.soton.opendata.roadaccidentopendata.utils.NetworkTask;
+import com.soton.opendata.roadaccidentopendata.utils.ParseJSON;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -60,6 +64,7 @@ import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Scanner;
 
@@ -123,9 +128,52 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                     mOverlay.remove();
                     mOverlay.clearTileCache();
                     MODE=0;
-                    Toast.makeText(getApplicationContext(),"删除",Toast.LENGTH_LONG).show();
+
+                    //天气获取
+                    String URL="http://api.openweathermap.org/data/2.5/weather?id=2643744&units=metric&appid=ca16b1c6672b2c0e020af5b8346797a3";
+                    NetworkTask networkTask=new HttpURLConnectionNetworkTask(NetworkTask.GET);
+                    networkTask.execute(URL);
+                    networkTask.setResponceLintener(new NetworkTask.ResponceLintener() {
+                        @Override
+                        public void onSuccess(String result) {
+                            String weathercode=ParseJSON.parseWeather(result);
+                            toast(weathercode);
+
+
+                            String URL="http://ec2-52-56-125-151.eu-west-2.compute.amazonaws.com:8983/solr/london_accidents_index/select?wt=json&indent=true&q=id%3A(2016*+%7C%7C+2015*)+%26%26+Weather_Conditions%3A"
+                                    +weathercode+"" +
+                                    "+%26%26+Hour%3A"+ Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+                            Log.e("url",URL);
+
+                            //获取地理位置
+                            NetworkTask networkTask=new HttpURLConnectionNetworkTask(NetworkTask.GET);
+                            networkTask.execute(URL);
+                            networkTask.setResponceLintener(new NetworkTask.ResponceLintener() {
+                                @Override
+                                public void onSuccess(String result) {
+                                    addHeatMap(ParseJSON.parseLatlng(result));
+                                }
+
+                                @Override
+                                public void onError(String error) {
+
+                                }
+                            });
+                        }
+                        @Override
+                        public void onError(String error) {
+                            toast(error);
+                        }
+                    });
+
+
+
                 }else if(MODE==0){
-                    addHeatMap();
+                    try {
+                        addHeatMap(readItems(R.raw.caraccident));
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
                     MODE=1;
                 }
             }
@@ -198,7 +246,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
     }
-    
+
 
     //权限处理回调
     @Override
@@ -243,13 +291,18 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             }
         });
 
-        addHeatMap();
+        try {
+            addHeatMap(readItems(R.raw.caraccident));
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
 
         //权限处理
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
             return;
         }
+
 
 //        Location inital = locationManager.getLastKnownLocation(provider);
 //        if(inital!=null){
@@ -259,16 +312,13 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
 
-    //添加热力图
-    private void addHeatMap() {
-        List<LatLng> list = null;
+    private void getDataFromServer(){
 
-        // Get the data: latitude/longitude positions of police stations.
-        try {
-            list = readItems(R.raw.caraccident);
-        } catch (JSONException e) {
-            Toast.makeText(this, "Problem reading list of locations.", Toast.LENGTH_LONG).show();
-        }
+    }
+
+    //添加热力图
+    private void addHeatMap(List<LatLng> list) {
+
 
         // Create a heat map tile provider, passing it the latlngs of the police stations.
         mProvider = new HeatmapTileProvider.Builder()
@@ -282,12 +332,32 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         Toast.makeText(getApplicationContext(),"添加叠层",Toast.LENGTH_LONG).show();
     }
 
+    private ArrayList<LatLng> parseJSON(String jsonData) {
+        ArrayList<LatLng> list=new ArrayList<LatLng>();
+        try {
+            JSONArray data=null;
+            JSONObject jsonObj = new JSONObject(jsonData);
+            // Getting JSON Array node
+            data = jsonObj.getJSONObject("response").getJSONArray("docs");
+            for (int i = 0; i < data.length(); i++) {
+                JSONObject jsonObject = data.getJSONObject(i);
+                double lat = jsonObject.getDouble("Latitude");
+                double lng = jsonObject.getDouble("Longitude");
+                list.add(new LatLng(lat,lng));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+
     private ArrayList<LatLng> readItems(int resource) throws JSONException {
         ArrayList<LatLng> list = new ArrayList<LatLng>();
         InputStream inputStream = getResources().openRawResource(resource);
         String json = new Scanner(inputStream).useDelimiter("\\A").next();
         JSONArray array = new JSONArray(json);
-        Toast.makeText(getApplicationContext(),array.length()+"",Toast.LENGTH_LONG).show();
+        Toast.makeText(getApplicationContext(), array.length() + "", Toast.LENGTH_LONG).show();
         for (int i = 0; i < 55000; i++) {
             JSONObject object = array.getJSONObject(i);
             double lat = object.getDouble("Latitude");
@@ -327,5 +397,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             notificationManager.createNotificationChannel(channel);
         }
     }
+
+
 
 }
