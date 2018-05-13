@@ -52,4 +52,14 @@ public class ParseJSON {
         }
         return weathercode;
     }
+    public static int parseCaseCount(String jsonData){
+        int count=0;
+        try{
+            JSONObject jsonObject=new JSONObject(jsonData);
+            count=jsonObject.getJSONObject("response").getInt("numFound");
+        }catch (Exception e){
+
+        }
+        return count;
+    }
 }

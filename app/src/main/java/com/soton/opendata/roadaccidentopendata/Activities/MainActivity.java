@@ -2,58 +2,57 @@ package com.soton.opendata.roadaccidentopendata.Activities;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Notification;
+import android.app.AlertDialog;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
+import android.media.MediaPlayer;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
+import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.NotificationManagerCompat;
 import android.util.Log;
-import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.ImageView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
 
-import com.arlib.floatingsearchview.FloatingSearchView;
-import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
-import com.google.android.gms.common.GooglePlayServicesRepairableException;
+
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.Geofence;
+import com.google.android.gms.location.GeofencingClient;
+import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.places.Place;
-import com.google.android.gms.location.places.ui.PlaceAutocomplete;
 import com.google.android.gms.location.places.ui.PlaceAutocompleteFragment;
-import com.google.android.gms.location.places.ui.PlacePicker;
 import com.google.android.gms.location.places.ui.PlaceSelectionListener;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
-import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.TileOverlay;
 import com.google.android.gms.maps.model.TileOverlayOptions;
+import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.maps.android.heatmaps.HeatmapTileProvider;
 import com.soton.opendata.roadaccidentopendata.R;
+import com.soton.opendata.roadaccidentopendata.utils.GeofenceTransitionsIntentService;
 import com.soton.opendata.roadaccidentopendata.utils.HttpURLConnectionNetworkTask;
 import com.soton.opendata.roadaccidentopendata.utils.NetworkTask;
 import com.soton.opendata.roadaccidentopendata.utils.ParseJSON;
@@ -68,7 +67,6 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.Scanner;
 
-import static android.support.v4.app.NotificationCompat.PRIORITY_DEFAULT;
 
 public class MainActivity extends FragmentActivity implements OnMapReadyCallback {
 
@@ -82,6 +80,11 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     private LocationRequest locationRequest=new LocationRequest().setInterval(2000);
     private NotificationManagerCompat notificationManager;
     private String CHANNEL_ID="noti";
+    private GeofencingClient geofencingClient;
+    private List<Geofence> geofences;
+    private PendingIntent mGeofencePendingIntent;
+    private ImageView cautionsign;
+    private boolean inthezone=false;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -90,6 +93,14 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         setContentView(R.layout.activity_main);
         createNotificationChannel();
         notificationManager = NotificationManagerCompat.from(getApplicationContext());
+        startService(new Intent(MainActivity.this,GeofenceTransitionsIntentService.class));
+        geofencingClient=LocationServices.getGeofencingClient(this);
+        addGeofences();
+
+        cautionsign=findViewById(R.id.cautionsign);
+        cautionsign.setVisibility(View.INVISIBLE);
+
+
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         //获取位置权限
@@ -104,17 +115,30 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             }
         });
 
+        //处理位置更新，实时提醒处理
         locationCallback=new LocationCallback(){
             @Override
             public void onLocationResult(LocationResult locationResult) {
                 if (locationResult == null) {
                     return;
                 }
-                for (Location location : locationResult.getLocations()) {
-                    // Update UI with location data
-                    // ...
-                    toast(location.toString());
+
+                //最后位置
+                Location lastLocation=locationResult.getLastLocation();
+                toast(lastLocation.getLatitude()+" "+lastLocation.getLongitude());
+                if((lastLocation.getLatitude()>50.9267)&&(lastLocation.getLatitude()<50.9269)){
+                    if((lastLocation.getLongitude()>-1.3829)&&(lastLocation.getLongitude()<-1.3827)){
+                        cautionsign.setVisibility(View.VISIBLE);
+                        if(!inthezone){
+                            MediaPlayer.create(getApplicationContext(),R.raw.indangerzone).start();
+                        }
+                        inthezone=true;
+                    }else{
+                        cautionsign.setVisibility(View.INVISIBLE);
+                        inthezone=false;
+                    }
                 }
+
             }
         };
 
@@ -128,7 +152,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                     mOverlay.remove();
                     mOverlay.clearTileCache();
                     MODE=0;
-
                     //天气获取
                     String URL="http://api.openweathermap.org/data/2.5/weather?id=2643744&units=metric&appid=ca16b1c6672b2c0e020af5b8346797a3";
                     NetworkTask networkTask=new HttpURLConnectionNetworkTask(NetworkTask.GET);
@@ -137,10 +160,9 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                         @Override
                         public void onSuccess(String result) {
                             String weathercode=ParseJSON.parseWeather(result);
-                            toast(weathercode);
 
-
-                            String URL="http://ec2-52-56-125-151.eu-west-2.compute.amazonaws.com:8983/solr/london_accidents_index/select?wt=json&indent=true&q=id%3A(2016*+%7C%7C+2015*)+%26%26+Weather_Conditions%3A"
+                            //获取坐标
+                            String URL="http://ec2-52-56-125-151.eu-west-2.compute.amazonaws.com:8983/solr/london_accidents_index/select?rows=99999&wt=json&indent=true&q=id%3A(2016*+%7C%7C+2015*)+%26%26+Weather_Conditions%3A"
                                     +weathercode+"" +
                                     "+%26%26+Hour%3A"+ Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
                             Log.e("url",URL);
@@ -152,6 +174,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                                 @Override
                                 public void onSuccess(String result) {
                                     addHeatMap(ParseJSON.parseLatlng(result));
+                                    Snackbar.make(getCurrentFocus(),"Switched to Real-Time Mode",Snackbar.LENGTH_LONG).show();
                                 }
 
                                 @Override
@@ -166,11 +189,10 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                         }
                     });
 
-
-
                 }else if(MODE==0){
                     try {
                         addHeatMap(readItems(R.raw.caraccident));
+                        Snackbar.make(getCurrentFocus(),"Switched to Full Mode",Snackbar.LENGTH_LONG).show();
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
@@ -190,19 +212,13 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                 if(b){
                     startLocationUpdates();
 
-                    Intent intent=new Intent();
-                    PendingIntent pendingIntent=PendingIntent.getActivity(getApplicationContext(),1,intent,0);
 
                     NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(getApplicationContext(), CHANNEL_ID)
                             .setSmallIcon(R.drawable.notification_icon)
                             .setContentTitle("The Status of Real-Time Warning")
                             .setContentText("Real-Time Warning Turned On")
                             .setStyle(new NotificationCompat.BigTextStyle()
-                                    .bigText("Real-Time Warning Turned On."))
-                            .setPriority(NotificationCompat.PRIORITY_MAX)
-                            .setTicker("float")
-                            .setDefaults(~0)
-                            .setFullScreenIntent(pendingIntent,true);
+                                    .bigText("Real-Time Warning Turned On."));
                     notificationManager.notify(1, mBuilder.build());
                 }else {
                     stopLocationUpdates();
@@ -212,7 +228,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                             .setContentTitle("The Status of Real-Time Warning")
                             .setContentText("Real-Time Warning Turned Off")
                             .setStyle(new NotificationCompat.BigTextStyle()
-                                    .bigText("Real-Time Warning Turned On."))
+                                    .bigText("Real-Time Warning Turned Off."))
                             .setPriority(NotificationCompat.PRIORITY_MAX)
                             .setAutoCancel(false);
                     notificationManager.notify(1, mBuilder.build());
@@ -227,9 +243,50 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
         autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
             @Override
-            public void onPlaceSelected(Place place) {
+            public void onPlaceSelected(final Place place) {
                 // TODO:Get info about the selected place.
                 mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(place.getLatLng(),15));
+
+                String URL="http://api.openweathermap.org/data/2.5/weather?id=2643744&units=metric&appid=ca16b1c6672b2c0e020af5b8346797a3";
+                NetworkTask networkTask=new HttpURLConnectionNetworkTask(NetworkTask.GET);
+                networkTask.execute(URL);
+                networkTask.setResponceLintener(new NetworkTask.ResponceLintener() {
+                    @Override
+                    public void onSuccess(String result) {
+                        String weathercode=ParseJSON.parseWeather(result);
+
+                        //获取坐标
+                        String URL="http://ec2-52-56-125-151.eu-west-2.compute.amazonaws.com:8983/solr/london_accidents_index/select?wt=json&indent=true&q=id%3A(2016*+%7C%7C+2015*)+%26%26+Weather_Conditions%3A"
+                                +weathercode+
+                                "+%26%26+Longitude%3A%5B"
+                                +(place.getLatLng().longitude-0.003) +
+                                "+TO+"
+                                + (place.getLatLng().longitude+0.003)+
+                                "%5D+%26%26+Latitude%3A%5B"+(place.getLatLng().latitude-0.003)+"+TO+"+(place.getLatLng().latitude+0.003)+"%5D+%26%26+Hour%3A"
+                                + Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+                        Log.e("url",URL);
+
+                        NetworkTask networkTask=new HttpURLConnectionNetworkTask(NetworkTask.GET);
+                        networkTask.execute(URL);
+                        networkTask.setResponceLintener(new NetworkTask.ResponceLintener() {
+                            @Override
+                            public void onSuccess(String result) {
+                                int caseCount=ParseJSON.parseCaseCount(result);
+                                showInfoDialog("The place you searched at the current condition had "+caseCount+" accidents happened in history.");
+                            }
+
+                            @Override
+                            public void onError(String error) {
+
+                            }
+                        });
+                    }
+                    @Override
+                    public void onError(String error) {
+                        toast(error);
+                    }
+                });
+
                 toast("搜索的地点经纬度"+place.getLatLng().toString());
             }
 
@@ -267,12 +324,10 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
-
-        // Add a marker in Sydney and move the camera
-        LatLng sydney = new LatLng(51.5, 0.12);
-        mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-        mMap.animateCamera(CameraUpdateFactory.newLatLng(sydney));
         mMap.setMyLocationEnabled(true);
+        //mMap.moveCamera(CameraUpdateFactory.zoomTo(10));
+        //mMap.setLatLngBoundsForCameraTarget(new LatLngBounds(new LatLng(51.290718,0.308564),new LatLng(51.69155, 0.510023)));
+
 
         mMap.setOnMyLocationButtonClickListener(new GoogleMap.OnMyLocationButtonClickListener() {
             @SuppressLint("MissingPermission")
@@ -303,18 +358,10 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             return;
         }
 
-
-//        Location inital = locationManager.getLastKnownLocation(provider);
-//        if(inital!=null){
-//            mMap.addMarker(new MarkerOptions().position(new LatLng(inital.getLatitude(),inital.getLongitude())).title("My Location"));
-//            mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(inital.getLatitude(),inital.getLongitude())));
-//        }
     }
 
 
-    private void getDataFromServer(){
 
-    }
 
     //添加热力图
     private void addHeatMap(List<LatLng> list) {
@@ -329,26 +376,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         list.clear();
         // Add a tile overlay to the map, using the heat map tile provider.
         mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
-        Toast.makeText(getApplicationContext(),"添加叠层",Toast.LENGTH_LONG).show();
-    }
-
-    private ArrayList<LatLng> parseJSON(String jsonData) {
-        ArrayList<LatLng> list=new ArrayList<LatLng>();
-        try {
-            JSONArray data=null;
-            JSONObject jsonObj = new JSONObject(jsonData);
-            // Getting JSON Array node
-            data = jsonObj.getJSONObject("response").getJSONArray("docs");
-            for (int i = 0; i < data.length(); i++) {
-                JSONObject jsonObject = data.getJSONObject(i);
-                double lat = jsonObject.getDouble("Latitude");
-                double lng = jsonObject.getDouble("Longitude");
-                list.add(new LatLng(lat,lng));
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return list;
     }
 
 
@@ -380,6 +407,8 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
     private void stopLocationUpdates() {
         mFusedLocationClient.removeLocationUpdates(locationCallback);
+        cautionsign.setVisibility(View.INVISIBLE);
+        inthezone=false;
     }
 
     private void createNotificationChannel() {
@@ -396,6 +425,79 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
             notificationManager.createNotificationChannel(channel);
         }
+    }
+
+    private void showInfoDialog(String Content){
+        final AlertDialog.Builder dialog=new AlertDialog.Builder(MainActivity.this);
+        dialog.setTitle("Query Result");
+        dialog.setMessage(Content);
+        dialog.setPositiveButton("Confirm", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+
+            }
+        });
+        dialog.setNegativeButton("Close", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+
+            }
+        });
+        dialog.show();
+    }
+
+    @SuppressLint("MissingPermission")
+    private void addGeofences(){
+        LatLng latLng=new LatLng(50.926845,-1.382881);
+        geofences=new ArrayList<>();
+        geofences.add(new Geofence.Builder()
+                .setRequestId("0")
+                .setCircularRegion(
+                        latLng.latitude,
+                        latLng.longitude,
+                        10//圆半径
+                )
+                .setExpirationDuration(2000)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
+                .build()
+        );
+        geofencingClient.addGeofences(getGeofencingRequest(), getGeofencePendingIntent())
+                .addOnSuccessListener(this, new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void aVoid) {
+                        // Geofences added
+                        // ...
+                        Log.e("fence","added");
+                    }
+                })
+                .addOnFailureListener(this, new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        // Failed to add geofences
+                        // ...
+                        Log.e("fence","addedFailed");
+                    }
+                });
+    }
+
+    private GeofencingRequest getGeofencingRequest() {
+        GeofencingRequest.Builder builder = new GeofencingRequest.Builder();
+        builder.setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER);
+        builder.addGeofences(geofences);
+        return builder.build();
+    }
+
+    private PendingIntent getGeofencePendingIntent() {
+        // Reuse the PendingIntent if we already have it.
+        if (mGeofencePendingIntent != null) {
+            return mGeofencePendingIntent;
+        }
+        Intent intent = new Intent(MainActivity.this, GeofenceTransitionsIntentService.class);
+        // We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when
+        // calling addGeofences() and removeGeofences().
+        mGeofencePendingIntent = PendingIntent.getService(this, 0, intent, PendingIntent.
+                FLAG_UPDATE_CURRENT);
+        return mGeofencePendingIntent;
     }
 
 
